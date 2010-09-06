@@ -1,0 +1,135 @@
+CDHをAWS EC2で利用する
+
+Amazon EC2上にHadoopを動作させる一番簡単な方法は、ClauderaのHadoopディストリビューション（のインストールスクリプト）が最初から装備されているAIMを利用することです。Amazonでそれを利用するには次の手順をとります。
+
+まずAmazon EC2のClauderaスクリプト、通称CDH Cloud ScriptsはPythonでできています。このCDH Cloud Scriptsを動作させるために、自分の環境に以下のソフトウェアをインストールします。
+
+Python 2.5 
+boto 1.8d 
+simplejson 2.0.9 
+
+botoはAmazon Web ServiceのPythonインタフェース実装です。simplejsonはJSONをPythonから利用するライブラリです。
+
+インストール：
+
+% easy_install "simplejson==2.0.9" 
+% easy_install "boto==1.8d" 
+
+The CDH Cloud scriptsをダウンロードします。
+
+
+/cdh/3
+
+AWS_ACCESS_KEY_ID: Your AWS Access Key ID 
+AWS_SECRET_ACCESS_KEY: Your AWS Secret Access Key 
+
+clusters.cfg 
+[my-hadoop-cluster] 
+image_id=ami-6159bf08 
+instance_type=c1.medium 
+key_name=tom 
+availability_zone=us-east-1c 
+private_key=/path/to/private/key/file 
+ssh_options=-i %(private_key)s -o StrictHostKeyChecking=no 
+user_data_file=http://archive.cloudera.com/cloud/ec2/cdh2/hadoop-ec2-init-remote.sh 
+
+AMIs: 
+AMI (bucket/name) ID 
+cloudera-ec2-hadoop-images/cloudera-hadoop-fedora-20090623-i386 ami-6159bf08 
+cloudera-ec2-hadoop-images/cloudera-hadoop-fedora-20090623-x86_64 ami-2359bf4a 
+cloudera-ec2-hadoop-images/cloudera-hadoop-ubuntu-20090623-i386 ami-ed59bf84 
+cloudera-ec2-hadoop-images/cloudera-hadoop-ubuntu-20090623-x86_64 ami-8759bfee 
+The architecture must be compatible with the instance type. For m1.small and c1.medium instances, use the i386 AMIs. For 
+m1.large, m1.xlarge, and c1.xlarge instances, use the x86_64 AMIs. One of the high CPU instances (c1.medium or c1.xlarge) is 
+recommended. 
+
+% hadoop-ec2 list 
+
+% hadoop-ec2 launch-cluster my-hadoop-cluster 10 
+
+% hadoop-ec2 launch-cluster my-hadoop-cluster 1 nn,snn,jt 10 dn,tt 
+% hadoop-ec2 launch-cluster my-hadoop-cluster 1 nn,snn 1 jt 10 dn,tt 
+
+http://ec2-xxx-xxx-xxx-xxx.compute-1.amazonaws.com/ 
+
+% eval `hadoop-ec2 proxy my-hadoop-cluster` 
+
+% kill $HADOOP_CLOUD_PROXY_PID 
+ 
+EBS Storage 
+my-ebs-cluster ~/.hadoop-cloud/clusters.cfg 
+
+Create storage for the new cluster by creating a temporary EBS volume of size 100GiB, formatting it, and saving it as a snapshot in S3. 
+This way, you only have to do the formatting once. 
+
+% hadoop-ec2 create-formatted-snapshot my-ebs-cluster 100 
+
+{ 
+  "nn": [ 
+    { 
+      "device": "/dev/sdj", 
+      "mount_point": "/ebs1", 
+      "size_gb": "100", 
+      "snapshot_id": "snap-268e704f" 
+    }, 
+    { 
+      "device": "/dev/sdk", 
+      "mount_point": "/ebs2", 
+      "size_gb": "100", 
+      "snapshot_id": "snap-268e704f" 
+    } 
+  ], 
+  "dn": [ 
+    { 
+      "device": "/dev/sdj", 
+      "mount_point": "/ebs1", 
+      "size_gb": "100", 
+      "snapshot_id": "snap-268e704f" 
+    }, 
+    { 
+      "device": "/dev/sdk", 
+      "mount_point": "/ebs2", 
+      "size_gb": "100", 
+      "snapshot_id": "snap-268e704f" 
+    } 
+  ] 
+}
+
+% hadoop-ec2 create-storage my-ebs-cluster nn 1 my-ebs-cluster-storage-spec.json 
+% hadoop-ec2 create-storage my-ebs-cluster dn 2 my-ebs-cluster-storage-spec.json 
+
+% hadoop-ec2 launch-cluster my-ebs-cluster 2 
+
+% hadoop-ec2 login my-ebs-cluster 
+
+# hadoop fs -mkdir input 
+# hadoop fs -put /etc/hadoop/conf/*.xml input 
+# hadoop jar /usr/lib/hadoop/hadoop-*-examples.jar grep input output \ 
+     'dfs[a-z.]+' 
+
+# hadoop fs -cat output/part-* | head 
+
+% hadoop-ec2 terminate-cluster my-ebs-cluster 
+
+% hadoop-ec2 launch-cluster my-ebs-cluster 2 
+% hadoop-ec2 login my-ebs-cluster 
+
+# hadoop fs -cat output/part-* | head 
+
+hadoop-site.xml ~/.hadoop-cloud/<cluster-name> 
+
+% export HADOOP_CONF_DIR=~/.hadoop-cloud/my-hadoop-cluster 
+
+% hadoop fs -ls / 
+
+% hadoop fs -mkdir input # create an input directory 
+% hadoop fs -put $HADOOP_HOME/LICENSE.txt input # copy a file there 
+% hadoop jar $HADOOP_HOME/hadoop-*-examples.jar wordcount input output 
+% hadoop fs -cat output/part-* | head 
+
+% hadoop-ec2 login my-hadoop-cluster 
+
+# hadoop fs -mkdir input 
+# hadoop fs -put /etc/hadoop/conf/*.xml input 
+# hadoop jar /usr/lib/hadoop/hadoop-*-examples.jar grep input output 'dfs[a-z.]+' 
+# hadoop fs -cat output/part-* | head 
